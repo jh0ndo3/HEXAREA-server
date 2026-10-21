@@ -1,0 +1,21 @@
+{
+  // Cloudflare で作る Worker の名前と、ここの name を同じにすること（アドレスは https://hexarea-server.jh0ndo3.workers.dev になる）
+  "name": "hexarea-server",
+  "main": "index.js",
+  "compatibility_date": "2025-10-01",
+  // ルームごとの Durable Object。無料プランでは SQLite 型（new_sqlite_classes）が必要
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOMS", "class_name": "Room" }
+    ]
+  },
+  // migrations は消さずに足していく（v1 を消すと、既存のルームが使えなくなる）
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Room"] }
+  ],
+  "vars": {
+    // ゲームを置いたサイトだけに使わせる（カンマ区切りで複数可）。空 "" にすると制限なし
+    // GitHub Pages はリポジトリ名に関係なく、Origin は https://ユーザー名.github.io になる
+    "ALLOWED_ORIGINS": "https://jombat1007-lab.github.io"
+  }
+}
