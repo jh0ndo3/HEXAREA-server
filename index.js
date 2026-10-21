@@ -90,7 +90,7 @@ function createEngine() {
   const viewP = () => onPlay() ? (ONLINE.spec ? (ONLINE.view > 0 ? ONLINE.view : ONLINE.view === 'all' ? turn : 0) : ONLINE.seat) : isCPU(turn) ? humanSeat() : turn;   // 盤面を見るプレイヤー（オンラインでは自分の席。観戦者は、選んだプレイヤーの視点。公開情報だけのときは 0）
   const myTurn = () => onPlay() ? ONLINE.seat === turn : !isCPU(turn);
   let langOpen = per(false), fireOpen = per(false), stoneOpen = per(false), pending = per(() => []), popupQ = [], gmBackup = null, xOpen = {};   // xOpen: 新石器スキルの解放状態
-  const XIDS = ['farm','herd','polish','pottery','faith','cook','settle','trap','survey','summit']; const resetX = () => { for (const k of XIDS) xOpen[k] = per(false); }; resetX(); let baseCell = {}, retPick = {}, tieStay = false, vNew = {}, resT = {};   // vNew: 建てたばかり（次の自分の番まで拠点扱いでない）の村 {マスのキー: 1} ／ resT: 回収した資源マスの復活 {マスのキー: [回収した回数, 復活するラウンド]}
+  const XIDS = ['farm','herd','polish','pottery','faith','cook','settle','trap','survey','summit']; const resetX = () => { for (const k of XIDS) xOpen[k] = per(false); }; resetX(); let baseCell = {}, retPick = {}, tieStay = false, battleWon = false, vNew = {}, resT = {};   // vNew: 建てたばかり（次の自分の番まで拠点扱いでない）の村 {マスのキー: 1} ／ resT: 回収した資源マスの復活 {マスのキー: [回収した回数, 復活するラウンド]}
     //   // retPick: 強制帰還で同じ距離の拠点が複数あるとき、本人が選ぶ候補 {席: [マスのキー…] または null} ／ tieStay: 現在地への攻撃が引き分けで、攻撃側が入れなかった
     //   // 「言語の獲得」の解放状態と、表示待ちのお知らせ   // 手番交代の1秒待ち中は操作を受け付けない
 
@@ -320,6 +320,7 @@ function createEngine() {
   const isTarget = (c,p) => {
     if (c.t === 's') return false;
     if (c.o !== 0 && c.o !== p) return !!started[p] && !!last[p] && nbrs(c).includes(last[p]);   // 相手の現在地（白枠）も攻撃できる   // 相手の色のマス: 現在位置に隣接していれば戦闘を挑める
+    if (c.o === p && intruder(c, p)) return !!started[p] && !!last[p] && nbrs(c).includes(last[p]);   // 自分の領地を通行中の相手: 現在位置の隣なら戦闘を挑める
     if (c.o === p) return started[p] && c !== last[p] && (isReturn(c, p) || nbrs(c).includes(last[p]) || (roadRange(p) > 1 && hexDist(c, last[p]) <= roadRange(p) && onRoad(c,p)));   // 自領: 通常は隣のマスだけ。煮炊きの技術で、道でつながった半径2マス以内も移動できる
     if (!started[p]) return isFrontier(c,p);
     if (!canStep(p)) return isFrontier(c,p);
@@ -421,8 +422,8 @@ function createEngine() {
     if (!busy && !over && actions > 0 && isTarget(c, turn) && !isHarvest(c, turn) && sp[turn] < moveCost(c, turn)) { msg = `食料が足りません（このマスには食料${moveCost(c, turn)}が必要です）`; render(); return; }
     if (busy || !isLegal(c, turn)) return;
     if (isBattle(c, turn)) {   // 相手の色のマス・森のマス: 確認のうえ戦闘
-      const wild = c.forest && c.o === 0;
-      ask(wild ? `獣（戦力 ${forestSize(c)}）の縄張りです。<br>戦闘しますか？（自分の戦力 ${battlePower(turn, true, c)} ／ 食料${cost(c, turn)}消費）` : `${name(c.o)}と戦闘しますか？<br>（自分の戦力 ${battlePower(turn, false, c)} ／ 相手の戦力 ${battlePower(c.o, false, c)} ／ 食料${cost(c, turn)}消費）` + (isPlayer(c.o) && isMyBase(c, c.o) ? (basesOf(c.o).length === 1 ? '<br>🏴 ここは相手の最後の拠点です。奪うと相手は脱落します' : '<br>🏴 ここは相手の拠点です。拠点をすべて奪うと相手は脱落します') : ''), '戦闘', () => battle(c));
+      const wild = c.forest && c.o === 0, fo = foeOf(c, turn), intr = !wild && fo !== c.o;
+      ask(wild ? `獣（戦力 ${forestSize(c)}）の縄張りです。<br>戦闘しますか？（自分の戦力 ${battlePower(turn, true, c)} ／ 食料${cost(c, turn)}消費）` : `${name(fo)}と戦闘しますか？<br>（自分の戦力 ${battlePower(turn, false, c)} ／ 相手の戦力 ${battlePower(fo, false, c)} ／ 食料${cost(c, turn)}消費）` + (intr ? '<br>♟ 自分の領地を通行中の相手です。勝つと、相手は拠点へ強制帰還します' : '') + (!intr && isPlayer(c.o) && isMyBase(c, c.o) ? (basesOf(c.o).length === 1 ? '<br>🏴 ここは相手の最後の拠点です。奪うと相手は脱落します' : '<br>🏴 ここは相手の拠点です。拠点をすべて奪うと相手は脱落します') : ''), '戦闘', () => battle(c));
       return;
     }
     if (isHarvest(c, turn) && !pickMode && c !== last[turn] && isTarget(c, turn) && sp[turn] >= 1 && sp[turn] >= moveCost(c, turn)) {   // 回収と移動の両方できるマス（言語の獲得）: 選べる
@@ -453,7 +454,9 @@ function createEngine() {
     while (st.length) { const x = st.pop(); for (const n of nbrs(x)) if (n.forest && n.o === 0 && !seen.has(key(n.q,n.r))) { seen.add(key(n.q,n.r)); st.push(n); } }
     return seen.size;
   }
-  const isBattle = (c, p) => (c.forest && c.o === 0) || isEnemy(c.o, p);
+  const intruder = (c, p) => (c && c.o === p && isPlayer(p)) ? (PL().find(q => q !== p && alive[q] && last[q] === c) || 0) : 0;   // 自分の領地を通行中の相手（そのマスに♟がいる相手の席。いなければ0）
+  const foeOf = (c, p) => (c.forest && c.o === 0) ? 0 : (intruder(c, p) || c.o);   // 戦闘の相手: 獣は0 ／ 自分の領地にいる相手 ／ 相手の色のマスの持ち主
+  const isBattle = (c, p) => (c.forest && c.o === 0) || isEnemy(c.o, p) || !!intruder(c, p);   // 自分の領地を通行中の相手の♟にも戦闘を挑める
   function meetCheck(p, c) {   // 「未知の存在との出会い」: 隣り合ったプレイヤー全員に解放
     const adj = [...new Set(nbrs(c).map(n => n.o).filter(o => isEnemy(o, p)))];
     if (adj.length) { unlock(p, '未知の存在との出会い'); for (const o of adj) unlock(o, '未知の存在との出会い'); }
@@ -469,15 +472,17 @@ function createEngine() {
     return cand;
   }
   function battle(c) {   // 戦闘に挑む（確認済み）。勝利でマスを奪う／同数は通行のみ／敗北は何も起きない。行動は必ず1回使う
-    const p = turn, o = c.o, wild = c.forest && c.o === 0, wasBase = !wild && isPlayer(o) && isMyBase(c, o), wasLoc = !wild && isPlayer(o) && last[o] === c;   // wasBase: 奪うマスは相手の拠点 ／ wasLoc: 相手の現在地への攻撃
-    tieStay = false;
+    const p = turn, wild = c.forest && c.o === 0, o = foeOf(c, p), intr = !wild && o !== c.o, wasBase = !wild && !intr && isPlayer(o) && isMyBase(c, o), wasLoc = !wild && isPlayer(o) && last[o] === c;   // intr: 自分の領地を通行中の相手への攻撃（マスはもともと自分の色）   // wasBase: 奪うマスは相手の拠点 ／ wasLoc: 相手の現在地への攻撃
+    tieStay = false; battleWon = false;
     if (!gm) sp[p] -= cost(c, p);   // 戦闘の食料（そのマスへ移動するのと同じ）
     const me = battlePower(p, wild, c), foe = wild ? forestSize(c) : battlePower(o, false, c);
     const title = wild ? '縄張りの主張' : '戦闘';
     let sub;
     if (me > foe) {
-      c.o = p; c.village = false; delete vNew[key(c.q, c.r)]; started[p] = true; last[p] = c;   // 森は獣に勝っても森のまま（自分の領地の森になる）
-      if (wild) { skills[p].beastWon = true; addSp(p, 1); sub = `勝利！（戦力 ${me} 対 ${foe}）食料を1奪った`; }
+      battleWon = true;
+      if (!intr) { c.o = p; c.village = false; delete vNew[key(c.q, c.r)]; }   // 通行中の相手を追い払ったときは、自分のマス・村はそのまま
+      started[p] = true; last[p] = c;   // 森は獣に勝っても森のまま（自分の領地の森になる）
+      if (wild) { skills[p].beastWon = true; rp[p]++; if (rp[p] >= 2) unlock(p, '打撃の共鳴', 'stone'); sub = `勝利！（戦力 ${me} 対 ${foe}）資源を1得た`; }   // 森の獣に勝つと資源+1
       else if (rp[o] > 0) { rp[o]--; rp[p]++; sub = `勝利！（戦力 ${me} 対 ${foe}）資源を1奪った`; }
       else sub = `勝利！（戦力 ${me} 対 ${foe}）マスを奪った`;
     } else if (me === foe) {
@@ -493,7 +498,7 @@ function createEngine() {
     }
     if (!isCPU(p)) popupQ.push({t: title, s: sub});
     else if (!wild && !isCPU(o)) {   // AIに攻められた人へ、守った側から見た結果を知らせる
-      const ds = me > foe ? `マスを奪われた…（戦力 ${me} 対 ${foe}）` + (sub.includes('資源') ? ' 資源を1奪われた' : '') : me === foe ? `引き分け（戦力 ${me} 対 ${foe}）` + (wasLoc ? '相手は通行できなかった' : '相手はこのマスを通行した') : `撃退した！（戦力 ${me} 対 ${foe}）`;
+      const ds = me > foe ? (intr ? `通行中に攻撃され、負けた…（戦力 ${me} 対 ${foe}）` : `マスを奪われた…（戦力 ${me} 対 ${foe}）`) + (sub.includes('資源') ? ' 資源を1奪われた' : '') : me === foe ? `引き分け（戦力 ${me} 対 ${foe}）` + (wasLoc ? '相手は通行できなかった' : '相手はこのマスを通行した') : `撃退した！（戦力 ${me} 対 ${foe}）`;
       (o === viewP() && humansAlive() < 2 ? popupQ : pending[o]).push({t: `⚔ ${name(p)}の攻撃`, s: ds});
     }
     const baseTaken = me > foe && wasBase, baseHit = baseTaken && basesOf(o).length === 0;   // 拠点潰し: 相手の拠点（最初の拠点・村）をすべて奪った
@@ -666,7 +671,7 @@ function createEngine() {
   // 効果音（index.html の SFX の包み方と同じ判定）→ 結果の記録（RESULT と同じ）の順に包む
   let depth = 0;
   act = wrapE(act, (o, a) => { const p = turn, rp0 = rp[p], last0 = last[p]; depth++; try { o(...a); } finally { depth--; } if (depth === 0) { if (rp[p] > rp0) SFX.play('harvest'); else if (last[p] !== last0) SFX.play('step'); } });
-  battle = wrapE(battle, (o, a) => { const c = a[0], p = turn, o0 = c.o; o(...a); if (!over) SFX.play(c.o === p && o0 !== p ? 'win' : (last[p] === c || tieStay) ? 'draw' : 'lose'); });
+  battle = wrapE(battle, (o, a) => { const c = a[0], p = turn, o0 = c.o; o(...a); if (!over) SFX.play(battleWon ? 'win' : (last[p] === c || tieStay) ? 'draw' : 'lose'); });
   buildVillage = wrapE(buildVillage, (o, a) => { const had = a[0].village; o(...a); if (!had && a[0].village) SFX.play('build'); });
   demolishVillage = wrapE(demolishVillage, (o, a) => { const had = a[0].village; o(...a); if (had && !a[0].village) SFX.play('demolish'); });
   scout = wrapE(scout, (o, a) => { const p = turn, n = (scoutV[p] || []).length; o(...a); if ((scoutV[p] || []).length > n) SFX.play('scout'); });
@@ -679,7 +684,7 @@ function createEngine() {
   act = wrapE(act, (o, a) => { const c = a[0], p = turn, h0 = c && c.harv, r = o(...a); if (c && !h0 && c.harv && stats[p]) stats[p].harv++; return r; });
   battle = wrapE(battle, (o, a) => {
     const c = a[0], p = turn, o0 = c.o, wild = c.forest && c.o === 0, r = o(...a), s = stats[p];
-    if (s) { if (c.o === p && o0 !== p) { s.win++; if (wild) s.beast++; } else if (last[p] === c || tieStay) s.draw++; else s.lose++; }
+    if (s) { if (battleWon) { s.win++; if (wild) s.beast++; } else if (last[p] === c || tieStay) s.draw++; else s.lose++; }
     return r;
   });
   buildVillage = wrapE(buildVillage, (o, a) => { const had = a[0].village, r = o(...a); if (!had && a[0].village && stats[turn]) stats[turn].built++; return r; });
