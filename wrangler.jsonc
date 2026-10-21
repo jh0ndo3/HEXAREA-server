@@ -16,6 +16,6 @@
   "vars": {
     // ゲームを置いたサイトだけに使わせる（カンマ区切りで複数可）。空 "" にすると制限なし
     // GitHub Pages はリポジトリ名に関係なく、Origin は https://ユーザー名.github.io になる
-    "ALLOWED_ORIGINS": "https://jombat1007-lab.github.io"
+    "ALLOWED_ORIGINS": "https://jh0ndo3.github.io"
   }
 }
